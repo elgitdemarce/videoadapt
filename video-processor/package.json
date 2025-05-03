@@ -1,0 +1,11 @@
+{
+    "name": "video-processor",
+    "version": "1.0.0",
+    "description": "Online Video Processor",
+    "scripts": {
+        "start": "serve public"
+    },
+    "dependencies": {
+        "serve": "^14.2.0"
+    }
+}
