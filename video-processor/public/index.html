@@ -3,6 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <title>Procesador de Video</title>
+    <!-- Encabezados de seguridad cruciales -->
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+    <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+    
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -63,8 +67,36 @@
 
     <div id="status"></div>
 
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
     <script>
+        // Función para cargar FFmpeg de forma segura
+        async function loadFFmpeg() {
+            // Verificar soporte de SharedArrayBuffer
+            if (typeof SharedArrayBuffer === 'undefined') {
+                throw new Error('Su navegador no soporta SharedArrayBuffer. Actualice o use un navegador compatible.');
+            }
+
+            // Cargar script de FFmpeg
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js';
+                
+                script.onload = () => {
+                    if (window.FFmpeg) {
+                        const { createFFmpeg, fetchFile } = FFmpeg;
+                        resolve({ createFFmpeg, fetchFile });
+                    } else {
+                        reject(new Error('No se pudo cargar FFmpeg'));
+                    }
+                };
+                
+                script.onerror = () => {
+                    reject(new Error('Error al cargar script de FFmpeg'));
+                };
+                
+                document.head.appendChild(script);
+            });
+        }
+
         // Elementos del DOM
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
@@ -143,8 +175,12 @@
 
             try {
                 // Cargar FFmpeg
-                const { createFFmpeg, fetchFile } = FFmpeg;
-                const ffmpeg = createFFmpeg({ log: true });
+                const { createFFmpeg, fetchFile } = await loadFFmpeg();
+                const ffmpeg = createFFmpeg({ 
+                    log: true,
+                    // Configuraciones para mejor compatibilidad
+                    corePath: 'https://unpkg.com/@ffmpeg/core@0.10.0/dist/ffmpeg-core.js'
+                });
                 
                 statusDiv.textContent = 'Cargando FFmpeg...';
                 await ffmpeg.load();
