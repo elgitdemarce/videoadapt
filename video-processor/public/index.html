@@ -2,108 +2,126 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Diagnóstico de Procesador de Video</title>
+    <title>Video Processor Debug</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }
-        #drop-zone { 
-            border: 2px dashed #ccc; 
-            height: 200px; 
-            text-align: center; 
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 600px; 
+            margin: 0 auto; 
             padding: 20px; 
+        }
+        #drop-zone { 
+            border: 3px dashed red; 
+            height: 200px; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
             margin: 20px 0;
         }
-        #status { color: red; }
+        #debug-info {
+            background-color: #f0f0f0;
+            padding: 10px;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
-    <h1>Diagnóstico de Procesador de Video</h1>
-    
-    <div id="compatibility-check"></div>
+    <h1>Video Processor Debugger</h1>
     
     <div id="drop-zone">
         Arrastra archivos MP4 aquí
     </div>
-    
+
     <input type="file" id="file-input" accept="video/mp4">
-    
-    <div id="status"></div>
+
+    <div id="debug-info">
+        <h3>Información de Depuración:</h3>
+        <p id="browser-info"></p>
+        <p id="event-log"></p>
+        <p id="file-info"></p>
+    </div>
 
     <script>
-        const compatibilityCheck = document.getElementById('compatibility-check');
+        // Elementos del DOM
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
-        const statusDiv = document.getElementById('status');
+        const browserInfoEl = document.getElementById('browser-info');
+        const eventLogEl = document.getElementById('event-log');
+        const fileInfoEl = document.getElementById('file-info');
 
-        // Verificar compatibilidad del navegador
-        function checkCompatibility() {
-            const checks = [
-                { 
-                    feature: 'Drag and Drop', 
-                    supported: 'draggable' in document.createElement('div') 
-                },
-                { 
-                    feature: 'File API', 
-                    supported: !!(window.File && window.FileReader && window.FileList && window.Blob) 
-                },
-                { 
-                    feature: 'WebAssembly', 
-                    supported: !!window.WebAssembly 
-                }
-            ];
-
-            compatibilityCheck.innerHTML = checks.map(check => 
-                `<p>${check.feature}: ${check.supported ? '✅ Soportado' : '❌ No soportado'}</p>`
-            ).join('');
+        // Información del navegador
+        function getBrowserInfo() {
+            const ua = navigator.userAgent;
+            browserInfoEl.textContent = `Navegador: ${ua}`;
         }
 
         // Configurar eventos de drag and drop
         function setupDragDropEvents() {
+            // Prevenir comportamiento por defecto
             ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                dropZone.addEventListener(eventName, preventDefaults, false);
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    eventLogEl.textContent = `Último evento: ${eventName}`;
+                }, false);
             });
 
-            dropZone.addEventListener('drop', handleDrop, false);
+            // Evento de soltar archivos
+            dropZone.addEventListener('drop', (e) => {
+                const files = e.dataTransfer.files;
+                processFiles(files);
+            }, false);
+
+            // Evento de selección de archivo
+            fileInput.addEventListener('change', (e) => {
+                const files = e.target.files;
+                processFiles(files);
+            });
+
+            // Evento de clic en zona de drop
+            dropZone.addEventListener('click', () => {
+                fileInput.click();
+            });
         }
 
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            statusDiv.textContent = `Evento: ${e.type}`;
-        }
-
-        function handleDrop(e) {
-            const files = e.dataTransfer.files;
-            statusDiv.textContent = `Archivos dropeados: ${files.length}`;
-            
-            const mp4Files = [...files].filter(f => f.type === 'video/mp4');
+        // Procesar archivos
+        function processFiles(files) {
+            // Convertir FileList a array y filtrar MP4
+            const mp4Files = Array.from(files).filter(file => file.type === 'video/mp4');
             
             if (mp4Files.length > 0) {
-                statusDiv.textContent = `Archivo MP4 detectado: ${mp4Files[0].name}`;
+                const file = mp4Files[0];
+                fileInfoEl.innerHTML = `
+                    Archivo seleccionado: ${file.name}<br>
+                    Tipo: ${file.type}<br>
+                    Tamaño: ${(file.size / 1024 / 1024).toFixed(2)} MB
+                `;
+                
+                // Intentar leer metadatos del video
+                const video = document.createElement('video');
+                video.preload = 'metadata';
+                video.src = URL.createObjectURL(file);
+                
+                video.onloadedmetadata = function() {
+                    fileInfoEl.innerHTML += `<br>
+                        Resolución: ${video.videoWidth}x${video.videoHeight}<br>
+                        Duración: ${video.duration} segundos
+                    `;
+                };
             } else {
-                statusDiv.textContent = 'Por favor, suelte un archivo MP4';
+                fileInfoEl.textContent = 'Por favor, seleccione un archivo MP4';
             }
         }
 
-        // Soporte de selección de archivo por clic
-        fileInput.addEventListener('change', (e) => {
-            const files = e.target.files;
-            statusDiv.textContent = `Archivos seleccionados: ${files.length}`;
-            
-            const mp4Files = [...files].filter(f => f.type === 'video/mp4');
-            
-            if (mp4Files.length > 0) {
-                statusDiv.textContent = `Archivo MP4 seleccionado: ${mp4Files[0].name}`;
-            }
-        });
+        // Inicialización
+        function init() {
+            getBrowserInfo();
+            setupDragDropEvents();
+        }
 
-        // Añadir soporte de clic a zona de drop
-        dropZone.addEventListener('click', () => {
-            fileInput.click();
-        });
-
-        // Inicializar
-        checkCompatibility();
-        setupDragDropEvents();
+        // Ejecutar al cargar
+        init();
     </script>
 </body>
 </html>
