@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Procesador de Video Online</title>
+    <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Procesador de Video</h1>
+        
+        <div id="drop-zone" class="drop-zone">
+            Arrastra y suelta archivos MP4 aquí
+        </div>
+
+        <div id="video-config" class="video-config">
+            <h2>Configuración de Procesamiento</h2>
+            <div class="config-inputs">
+                <label>Bitrate (kbps):
+                    <input type="number" id="bitrate" value="2000" min="100" max="8000">
+                </label>
+                <label>FPS:
+                    <input type="number" id="fps" value="30" min="1" max="60">
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" id="keep-audio" checked> 
+                    Mantener Audio
+                </label>
+            </div>
+            <button id="process-btn">Procesar Video</button>
+        </div>
+
+        <div id="status" class="status"></div>
+    </div>
+
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
+    <script src="/src/script.js"></script>
+</body>
+</html>
