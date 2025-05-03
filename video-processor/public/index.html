@@ -2,126 +2,198 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Video Processor Debug</title>
+    <title>Procesador de Video</title>
     <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            max-width: 600px; 
-            margin: 0 auto; 
-            padding: 20px; 
-        }
-        #drop-zone { 
-            border: 3px dashed red; 
-            height: 200px; 
-            display: flex;
-            justify-content: center;
-            align-items: center;
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
             text-align: center;
-            margin: 20px 0;
         }
-        #debug-info {
-            background-color: #f0f0f0;
-            padding: 10px;
+        #drop-zone {
+            border: 3px dashed #3498db;
+            border-radius: 20px;
+            padding: 50px;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+        }
+        #drop-zone.drag-over {
+            background-color: rgba(52, 152, 219, 0.1);
+            border-color: #2980b9;
+        }
+        #video-config {
+            display: none;
             margin-top: 20px;
+        }
+        .config-input {
+            margin: 10px 0;
+        }
+        #status {
+            margin-top: 20px;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
-    <h1>Video Processor Debugger</h1>
+    <h1>Procesador de Video</h1>
     
     <div id="drop-zone">
-        Arrastra archivos MP4 aquí
+        Arrastra y suelta archivos MP4 aquí
+        <input type="file" id="file-input" accept="video/mp4" style="display:none;">
     </div>
 
-    <input type="file" id="file-input" accept="video/mp4">
-
-    <div id="debug-info">
-        <h3>Información de Depuración:</h3>
-        <p id="browser-info"></p>
-        <p id="event-log"></p>
-        <p id="file-info"></p>
+    <div id="video-config">
+        <div class="config-input">
+            <label>Bitrate (kbps):</label>
+            <input type="number" id="bitrate" value="2000" min="100" max="8000">
+        </div>
+        <div class="config-input">
+            <label>FPS:</label>
+            <input type="number" id="fps" value="30" min="1" max="60">
+        </div>
+        <div class="config-input">
+            <label>
+                <input type="checkbox" id="keep-audio" checked>
+                Mantener Audio
+            </label>
+        </div>
+        <button id="process-btn">Procesar Video</button>
     </div>
 
+    <div id="status"></div>
+
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
     <script>
         // Elementos del DOM
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
-        const browserInfoEl = document.getElementById('browser-info');
-        const eventLogEl = document.getElementById('event-log');
-        const fileInfoEl = document.getElementById('file-info');
+        const videoConfig = document.getElementById('video-config');
+        const processBtn = document.getElementById('process-btn');
+        const statusDiv = document.getElementById('status');
 
-        // Información del navegador
-        function getBrowserInfo() {
-            const ua = navigator.userAgent;
-            browserInfoEl.textContent = `Navegador: ${ua}`;
-        }
+        // Estado global
+        let currentFile = null;
 
         // Configurar eventos de drag and drop
         function setupDragDropEvents() {
-            // Prevenir comportamiento por defecto
             ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                dropZone.addEventListener(eventName, (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    eventLogEl.textContent = `Último evento: ${eventName}`;
-                }, false);
+                dropZone.addEventListener(eventName, preventDefaults, false);
             });
 
-            // Evento de soltar archivos
-            dropZone.addEventListener('drop', (e) => {
-                const files = e.dataTransfer.files;
-                processFiles(files);
-            }, false);
+            dropZone.addEventListener('dragenter', highlight, false);
+            dropZone.addEventListener('dragover', highlight, false);
+            dropZone.addEventListener('dragleave', unhighlight, false);
+            dropZone.addEventListener('drop', handleDrop, false);
 
-            // Evento de selección de archivo
-            fileInput.addEventListener('change', (e) => {
-                const files = e.target.files;
-                processFiles(files);
-            });
-
-            // Evento de clic en zona de drop
-            dropZone.addEventListener('click', () => {
-                fileInput.click();
-            });
+            // Soporte de clic
+            dropZone.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', handleFileSelect);
         }
 
-        // Procesar archivos
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        function highlight() {
+            dropZone.classList.add('drag-over');
+        }
+
+        function unhighlight() {
+            dropZone.classList.remove('drag-over');
+        }
+
+        function handleDrop(e) {
+            unhighlight();
+            const files = e.dataTransfer.files;
+            processFiles(files);
+        }
+
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            processFiles(files);
+        }
+
         function processFiles(files) {
-            // Convertir FileList a array y filtrar MP4
-            const mp4Files = Array.from(files).filter(file => file.type === 'video/mp4');
+            const mp4Files = Array.from(files).filter(f => f.type === 'video/mp4');
             
             if (mp4Files.length > 0) {
-                const file = mp4Files[0];
-                fileInfoEl.innerHTML = `
-                    Archivo seleccionado: ${file.name}<br>
-                    Tipo: ${file.type}<br>
-                    Tamaño: ${(file.size / 1024 / 1024).toFixed(2)} MB
-                `;
-                
-                // Intentar leer metadatos del video
-                const video = document.createElement('video');
-                video.preload = 'metadata';
-                video.src = URL.createObjectURL(file);
-                
-                video.onloadedmetadata = function() {
-                    fileInfoEl.innerHTML += `<br>
-                        Resolución: ${video.videoWidth}x${video.videoHeight}<br>
-                        Duración: ${video.duration} segundos
-                    `;
-                };
+                currentFile = mp4Files[0];
+                dropZone.textContent = `Archivo seleccionado: ${currentFile.name}`;
+                videoConfig.style.display = 'block';
+                statusDiv.textContent = 'Archivo MP4 listo para procesar';
             } else {
-                fileInfoEl.textContent = 'Por favor, seleccione un archivo MP4';
+                statusDiv.textContent = 'Por favor, seleccione un archivo MP4';
+                dropZone.textContent = 'Arrastra y suelta archivos MP4 aquí';
             }
         }
 
-        // Inicialización
-        function init() {
-            getBrowserInfo();
-            setupDragDropEvents();
-        }
+        // Procesamiento de video
+        processBtn.addEventListener('click', async () => {
+            if (!currentFile) {
+                statusDiv.textContent = 'Por favor, seleccione un archivo primero';
+                return;
+            }
 
-        // Ejecutar al cargar
-        init();
+            // Obtener configuraciones
+            const bitrate = document.getElementById('bitrate').value;
+            const fps = document.getElementById('fps').value;
+            const keepAudio = document.getElementById('keep-audio').checked;
+
+            try {
+                // Cargar FFmpeg
+                const { createFFmpeg, fetchFile } = FFmpeg;
+                const ffmpeg = createFFmpeg({ log: true });
+                
+                statusDiv.textContent = 'Cargando FFmpeg...';
+                await ffmpeg.load();
+
+                // Escribir archivo de entrada
+                statusDiv.textContent = 'Escribiendo archivo...';
+                ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(currentFile));
+
+                // Construir comando FFmpeg
+                const ffmpegCommand = [
+                    '-i', 'input.mp4',
+                    '-c:v', 'libx264',
+                    '-profile:v', 'high',
+                    '-level', '4.0',
+                    '-b:v', `${bitrate}k`,
+                    '-r', fps,
+                    keepAudio ? '' : '-an',
+                    'output.mp4'
+                ].filter(Boolean);
+
+                // Procesar video
+                statusDiv.textContent = 'Procesando video...';
+                await ffmpeg.run(...ffmpegCommand);
+
+                // Leer archivo de salida
+                statusDiv.textContent = 'Generando archivo...';
+                const data = ffmpeg.FS('readFile', 'output.mp4');
+
+                // Crear blob y descargar
+                const blob = new Blob([data.buffer], { type: 'video/mp4' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `processed_${currentFile.name}`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                statusDiv.textContent = 'Procesamiento completado';
+
+            } catch (error) {
+                console.error('Error de procesamiento:', error);
+                statusDiv.textContent = `Error: ${error.message}`;
+            }
+        });
+
+        // Inicializar
+        setupDragDropEvents();
     </script>
 </body>
 </html>
