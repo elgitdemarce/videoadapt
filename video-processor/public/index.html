@@ -37,10 +37,19 @@
             margin-top: 20px;
             font-weight: bold;
         }
+        .error-message {
+            color: red;
+            background-color: #ffeeee;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
     <h1>Procesador de Video</h1>
+    
+    <div id="compatibility-check" class="error-message" style="display:none;"></div>
     
     <div id="drop-zone">
         Arrastra y suelta archivos MP4 aquí
@@ -68,11 +77,55 @@
     <div id="status"></div>
 
     <script>
+        // Función de verificación de compatibilidad
+        function checkCompatibility() {
+            const compatibilityCheck = document.getElementById('compatibility-check');
+            const checks = [
+                {
+                    name: 'SharedArrayBuffer',
+                    check: () => typeof SharedArrayBuffer !== 'undefined',
+                    message: 'Su navegador no soporta SharedArrayBuffer. Actualice o use un navegador compatible.'
+                },
+                {
+                    name: 'Cross-Origin Isolation',
+                    check: () => window.crossOriginIsolated,
+                    message: 'La página no está cross-origin isolated. Verifique los encabezados de seguridad.'
+                },
+                {
+                    name: 'WebAssembly',
+                    check: () => !!window.WebAssembly,
+                    message: 'Su navegador no soporta WebAssembly.'
+                }
+            ];
+
+            const failedChecks = checks.filter(check => !check.check());
+
+            if (failedChecks.length > 0) {
+                compatibilityCheck.style.display = 'block';
+                compatibilityCheck.innerHTML = `
+                    <strong>Problemas de Compatibilidad:</strong>
+                    <ul>
+                        ${failedChecks.map(check => `<li>${check.message}</li>`).join('')}
+                    </ul>
+                    <p>Soluciones posibles:</p>
+                    <ul>
+                        <li>Actualice su navegador a la última versión</li>
+                        <li>Asegúrese de estar en un sitio HTTPS</li>
+                        <li>Verifique la configuración de seguridad de su navegador</li>
+                    </ul>
+                `;
+                return false;
+            }
+
+            compatibilityCheck.style.display = 'none';
+            return true;
+        }
+
         // Función para cargar FFmpeg de forma segura
         async function loadFFmpeg() {
-            // Verificar soporte de SharedArrayBuffer
-            if (typeof SharedArrayBuffer === 'undefined') {
-                throw new Error('Su navegador no soporta SharedArrayBuffer. Actualice o use un navegador compatible.');
+            // Verificar compatibilidad
+            if (!checkCompatibility()) {
+                throw new Error('Entorno no compatible');
             }
 
             // Cargar script de FFmpeg
@@ -228,8 +281,15 @@
             }
         });
 
-        // Inicializar
-        setupDragDropEvents();
+        // Inicialización
+        function init() {
+            // Verificación inicial de compatibilidad
+            checkCompatibility();
+            setupDragDropEvents();
+        }
+
+        // Ejecutar inicialización
+        init();
     </script>
 </body>
 </html>
