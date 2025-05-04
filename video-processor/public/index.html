@@ -280,9 +280,6 @@ async function extractVideoMetadata(file, ffmpeg) {
             total_frames: 'Desconocido'
         };
 
-        // Variable para capturar logs
-        let fullLog = '';
-
         try {
             // Crear un archivo temporal
             const tempFileName = 'temp_input.mp4';
@@ -294,8 +291,8 @@ async function extractVideoMetadata(file, ffmpeg) {
             ffmpeg.FS('writeFile', tempFileName, new Uint8Array(arrayBuffer));
 
             // Configurar captura de logs
-            const originalLogger = ffmpeg.setLogger;
             const logCapture = [];
+            const originalLogger = ffmpeg.setLogger;
             ffmpeg.setLogger = (log) => {
                 if (log.type === 'stderr') {
                     logCapture.push(log.message);
@@ -306,50 +303,49 @@ async function extractVideoMetadata(file, ffmpeg) {
                 // Ejecutar comando de análisis
                 await ffmpeg.run('-i', tempFileName);
             } catch (runError) {
-                // Ignorar errores de ejecución, ya que solo queremos los logs
+                // Ignorar errores de ejecución
                 console.log('Error de ejecución esperado:', runError);
             }
 
             // Restaurar logger original
             ffmpeg.setLogger = originalLogger;
 
-            // Unir logs capturados
-            fullLog = logCapture.join('\n');
+            // Buscar la línea específica de stream de video
+            const streamInfoLine = logCapture.find(line => 
+                line.includes('Stream #0:0') && line.includes('Video:')
+            );
 
-            // Patrones de búsqueda para metadatos
-            const patterns = {
-                duration: /Duration: (\d+:\d+:\d+\.\d+)/,
-                resolution: /(\d+)x(\d+)/,
-                fps: /(\d+) fps/,
-                bitrate: /(\d+) kb\/s/,
-                codec: /Video: (\w+)/,
-                profile: /\((\w+)\)/,
-                level: /level (\d+\.\d+)/
-            };
+            if (streamInfoLine) {
+                // Extraer metadatos usando regex
+                const codecMatch = streamInfoLine.match(/Video: (\w+)/);
+                const profileMatch = streamInfoLine.match(/\((\w+)\)/);
+                const resolutionMatch = streamInfoLine.match(/(\d+)x(\d+)/);
+                const fpsMatch = streamInfoLine.match(/(\d+) fps/);
+                const bitrateMatch = streamInfoLine.match(/(\d+) kb\/s/);
 
-            // Extraer metadatos usando la línea de stream de video
-            const streamInfoMatch = fullLog.match(/Stream #0:0\(eng\): Video: (\w+) \((\w+)\).*?, (\d+)x(\d+).*?, (\d+) kb\/s, (\d+) fps/);
-            
-            if (streamInfoMatch) {
-                basicMetadata.codec = streamInfoMatch[1];
-                basicMetadata.profile = streamInfoMatch[2];
-                basicMetadata.resolution = `${streamInfoMatch[3]}x${streamInfoMatch[4]}`;
-                basicMetadata.bitrate = `${streamInfoMatch[5]} kbps`;
-                basicMetadata.fps = streamInfoMatch[6];
+                // Asignar metadatos
+                if (codecMatch) basicMetadata.codec = codecMatch[1];
+                if (profileMatch) basicMetadata.profile = profileMatch[1];
+                if (resolutionMatch) basicMetadata.resolution = `${resolutionMatch[1]}x${resolutionMatch[2]}`;
+                if (fpsMatch) basicMetadata.fps = fpsMatch[1];
+                if (bitrateMatch) basicMetadata.bitrate = `${bitrateMatch[1]} kbps`;
             }
 
-            // Extraer duración
-            const durationMatch = fullLog.match(/Duration: (\d+:\d+:\d+\.\d+)/);
-            if (durationMatch) {
-                const [hours, minutes, seconds] = durationMatch[1].split(':').map(parseFloat);
-                basicMetadata.duration = (hours * 3600 + minutes * 60 + seconds).toFixed(2) + ' segundos';
+            // Buscar línea de duración
+            const durationLine = logCapture.find(line => line.includes('Duration:'));
+            if (durationLine) {
+                const durationMatch = durationLine.match(/Duration: (\d+:\d+:\d+\.\d+)/);
+                if (durationMatch) {
+                    const [hours, minutes, seconds] = durationMatch[1].split(':').map(parseFloat);
+                    basicMetadata.duration = (hours * 3600 + minutes * 60 + seconds).toFixed(2) + ' segundos';
+                }
             }
 
             // Eliminar archivo temporal
             ffmpeg.FS('unlink', tempFileName);
 
             // Depuración
-            console.log('Log completo:', fullLog);
+            console.log('Logs capturados:', logCapture);
             console.log('Metadatos extraídos:', basicMetadata);
 
             resolve(basicMetadata);
