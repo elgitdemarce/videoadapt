@@ -283,14 +283,6 @@ async function extractVideoMetadata(file, ffmpeg) {
         // Variable para capturar logs
         let fullLog = '';
 
-        // Configurar logger personalizado
-        const originalLogger = ffmpeg.setLogger;
-        ffmpeg.setLogger = (logger) => {
-            if (logger.type === 'log') {
-                fullLog += logger.message + '\n';
-            }
-        };
-
         try {
             // Crear un archivo temporal
             const tempFileName = 'temp_input.mp4';
@@ -301,11 +293,39 @@ async function extractVideoMetadata(file, ffmpeg) {
             // Escribir archivo usando FS
             ffmpeg.FS('writeFile', tempFileName, new Uint8Array(arrayBuffer));
 
-            // Ejecutar comando de análisis
-            await ffmpeg.run('-i', tempFileName);
-            
+            // Configurar captura de logs
+            const originalLogger = ffmpeg.setLogger;
+            const logCapture = [];
+            ffmpeg.setLogger = (log) => {
+                if (log.type === 'stderr') {
+                    logCapture.push(log.message);
+                }
+            };
+
+            try {
+                // Ejecutar comando de análisis
+                await ffmpeg.run('-i', tempFileName);
+            } catch (runError) {
+                // Ignorar errores de ejecución, ya que solo queremos los logs
+                console.log('Error de ejecución esperado:', runError);
+            }
+
             // Restaurar logger original
             ffmpeg.setLogger = originalLogger;
+
+            // Unir logs capturados
+            fullLog = logCapture.join('\n');
+
+            // Patrones de búsqueda para metadatos
+            const patterns = {
+                duration: /Duration: (\d+:\d+:\d+\.\d+)/,
+                resolution: /(\d+)x(\d+)/,
+                fps: /(\d+) fps/,
+                bitrate: /(\d+) kb\/s/,
+                codec: /Video: (\w+)/,
+                profile: /\((\w+)\)/,
+                level: /level (\d+\.\d+)/
+            };
 
             // Extraer metadatos usando la línea de stream de video
             const streamInfoMatch = fullLog.match(/Stream #0:0\(eng\): Video: (\w+) \((\w+)\).*?, (\d+)x(\d+).*?, (\d+) kb\/s, (\d+) fps/);
@@ -325,12 +345,6 @@ async function extractVideoMetadata(file, ffmpeg) {
                 basicMetadata.duration = (hours * 3600 + minutes * 60 + seconds).toFixed(2) + ' segundos';
             }
 
-            // Extraer level
-            const levelMatch = fullLog.match(/level (\d+\.\d+)/);
-            if (levelMatch) {
-                basicMetadata.level = levelMatch[1];
-            }
-
             // Eliminar archivo temporal
             ffmpeg.FS('unlink', tempFileName);
 
@@ -346,6 +360,7 @@ async function extractVideoMetadata(file, ffmpeg) {
         }
     });
 }
+
 
 
 
