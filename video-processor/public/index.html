@@ -265,7 +265,6 @@
 
         // Función para extraer metadatos detallados de video
 
-
 async function extractVideoMetadata(file, ffmpeg) {
     return new Promise(async (resolve, reject) => {
         // Metadatos básicos del archivo
@@ -281,103 +280,69 @@ async function extractVideoMetadata(file, ffmpeg) {
             total_frames: 'Desconocido'
         };
 
+        // Variable para capturar logs
+        let fullLog = '';
+
+        // Configurar logger personalizado
+        const originalLogger = ffmpeg.setLogger;
+        ffmpeg.setLogger = (logger) => {
+            if (logger.type === 'log') {
+                fullLog += logger.message + '\n';
+            }
+        };
+
         try {
             // Crear un archivo temporal
             const tempFileName = 'temp_input.mp4';
             ffmpeg.FS('writeFile', tempFileName, await fetchFile(file));
 
-                // Comando de ffprobe detallado
-                const ffprobeCmd = [
-                    '-v', 'quiet',
-                    '-print_format', 'json',
-                    '-show_format', 
-                    '-show_streams',
-                    tempFileName
-                ];
+            // Ejecutar comando de análisis
+            await ffmpeg.run('-i', tempFileName);
+            
+            // Restaurar logger original
+            ffmpeg.setLogger = originalLogger;
 
-                // Ejecutar comando de análisis
-                await ffmpeg.run(...ffprobeCmd);
-                
-                // Leer resultado de ffprobe
-                const probeOutput = ffmpeg.FS('readFile', tempFileName);
-                const probeText = new TextDecoder().decode(probeOutput);
-                
-                // Depuración: imprimir contenido completo del JSON
-                console.log('Contenido de ffprobe:', probeText);
+            // Patrones de búsqueda para diferentes metadatos
+            const patterns = {
+                duration: /Duration: (\d+:\d+:\d+\.\d+)/,
+                resolution: /Video: \w+ .*, (\d+)x(\d+)/,
+                fps: /(\d+) fps/,
+                bitrate: /(\d+) kb\/s/,
+                codec: /Video: (\w+)/,
+                profile: /\((\w+)\)/,
+                level: /level (\d+\.\d+)/
+            };
 
-                try {
-                    const videoInfo = JSON.parse(probeText);
-
-                    // Verificar si hay streams de video
-                    const videoStream = videoInfo.streams.find(stream => stream.codec_type === 'video');
-
-                    if (videoStream) {
-                        // Depuración: imprimir stream de video completo
-                        console.log('Stream de video:', videoStream);
-
-                        // Resolución
-                        if (videoStream.width && videoStream.height) {
-                            basicMetadata.resolution = `${videoStream.width}x${videoStream.height}`;
-                        }
-
-                        // Codec
-                        basicMetadata.codec = videoStream.codec_name || 'Desconocido';
-
-                        // Bitrate de stream
-                        if (videoStream.bit_rate) {
-                            const bitrate = parseInt(videoStream.bit_rate);
-                            basicMetadata.bitrate = (bitrate / 1000).toFixed(2) + ' kbps';
-                        }
-
-                        // Intentar obtener bitrate del formato si no está en el stream
-                        if (basicMetadata.bitrate === 'Desconocido' && videoInfo.format && videoInfo.format.bit_rate) {
-                            const formatBitrate = parseInt(videoInfo.format.bit_rate);
-                            basicMetadata.bitrate = (formatBitrate / 1000).toFixed(2) + ' kbps';
-                        }
-
-                        // Level
-                        basicMetadata.level = videoStream.level ? 
-                            (videoStream.level / 10).toFixed(1) : 'Desconocido';
-
-                        // Profile
-                        basicMetadata.profile = videoStream.profile || 'Desconocido';
-
-                        // FPS (múltiples métodos de extracción)
-                        if (videoStream.r_frame_rate) {
-                            try {
-                                // Método 1: Evaluar directamente
-                                const fps = eval(videoStream.r_frame_rate);
-                                basicMetadata.fps = fps.toFixed(2);
-                            } catch {
-                                // Método 2: Parseo manual
-                                const [num, den] = videoStream.r_frame_rate.split('/').map(Number);
-                                basicMetadata.fps = num && den ? (num / den).toFixed(2) : 'Desconocido';
-                            }
-                        }
-
-                        // Total de frames
-                        basicMetadata.total_frames = videoStream.nb_frames || 'Desconocido';
+            // Extraer metadatos usando expresiones regulares
+            Object.keys(patterns).forEach(key => {
+                const match = fullLog.match(patterns[key]);
+                if (match) {
+                    switch(key) {
+                        case 'duration':
+                            // Convertir formato HH:MM:SS.ms a segundos
+                            const [hours, minutes, seconds] = match[1].split(':').map(parseFloat);
+                            basicMetadata[key] = (hours * 3600 + minutes * 60 + seconds).toFixed(2) + ' segundos';
+                            break;
+                        case 'resolution':
+                            basicMetadata[key] = `${match[1]}x${match[2]}`;
+                            break;
+                        case 'bitrate':
+                            basicMetadata[key] = `${match[1]} kbps`;
+                            break;
+                        default:
+                            basicMetadata[key] = match[1];
                     }
-
-                    // Metadatos de formato
-                    if (videoInfo.format) {
-                        // Duración
-                        if (videoInfo.format.duration) {
-                            basicMetadata.duration = parseFloat(videoInfo.format.duration).toFixed(2) + ' segundos';
-                        }
-                    }
-
-                } catch (parseError) {
-                    console.error('Error parsing probe data:', parseError);
                 }
+            });
 
-                // Eliminar archivo temporal
-                ffmpeg.FS('unlink', tempFileName);
+            // Eliminar archivo temporal
+            ffmpeg.FS('unlink', tempFileName);
 
-                // Depuración final
-                console.log('Metadatos extraídos:', basicMetadata);
+            // Depuración
+            console.log('Log completo:', fullLog);
+            console.log('Metadatos extraídos:', basicMetadata);
 
-                resolve(basicMetadata);
+            resolve(basicMetadata);
 
         } catch (error) {
             console.error('Error extrayendo metadatos:', error);
@@ -385,8 +350,6 @@ async function extractVideoMetadata(file, ffmpeg) {
         }
     });
 }
-
-
 
 
 
