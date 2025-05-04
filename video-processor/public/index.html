@@ -280,33 +280,43 @@ async function extractVideoMetadata(file, ffmpeg) {
         // Escribir el archivo
         ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
 
-        // Captura de salida de consola de ffmpeg (stderr)
-        let output = '';
+        let ffmpegOutput = '';
+
+        // Capturar salida de ffmpeg desde stderr
         ffmpeg.setLogger(({ type, message }) => {
             if (type === 'fferr') {
-                output += message + '\n';
+                ffmpegOutput += message + '\n';
             }
         });
 
-        // Ejecutar ffmpeg solo para obtener información (no genera ningún archivo)
-        await ffmpeg.run('-i', 'input.mp4');
+        // Ejecutar solo análisis sin conversión
+        try {
+            await ffmpeg.run('-i', 'input.mp4');
+        } catch (e) {
+            // ffmpeg -i lanza error porque no se genera archivo de salida, eso es normal
+        }
 
-        // Parsear la salida capturada
-        const durationMatch = output.match(/Duration:\s(\d+:\d+:\d+\.\d+)/);
-        const resolutionMatch = output.match(/, (\d{2,5})x(\d{2,5})/);
-        const fpsMatch = output.match(/(\d+(?:\.\d+)?) fps/);
-        const bitrateMatch = output.match(/bitrate: (\d+ kb\/s)/);
-        const codecMatch = output.match(/Video: ([\w\d]+)/);
-        const profileMatch = output.match(/Video:.*?, (.*?)\(/);
-        const levelMatch = output.match(/Video:.*?,.*?,.*?,.*?, (\d+)/);
+        // Analizar la línea de video
+        const videoLine = ffmpegOutput.split('\n').find(line => line.includes('Video:'));
 
+        if (videoLine) {
+            // Ejemplo: Video: h264 (Main) (avc1 / 0x31637661), yuv420p, 1920x1080, 13930 kb/s, 60 fps
+            const codecMatch = videoLine.match(/Video:\s(\w+)/);
+            const profileMatch = videoLine.match(/\((\w+)\)/);
+            const resolutionMatch = videoLine.match(/, (\d{3,5}x\d{3,5})/);
+            const bitrateMatch = videoLine.match(/, (\d+\s*kb\/s)/);
+            const fpsMatch = videoLine.match(/, (\d+(?:\.\d+)?)\s*fps/);
+
+            if (codecMatch) basicMetadata.codec = codecMatch[1];
+            if (profileMatch) basicMetadata.profile = profileMatch[1];
+            if (resolutionMatch) basicMetadata.resolution = resolutionMatch[1];
+            if (bitrateMatch) basicMetadata.bitrate = bitrateMatch[1];
+            if (fpsMatch) basicMetadata.fps = fpsMatch[1];
+        }
+
+        // Extraer duración de otra línea
+        const durationMatch = ffmpegOutput.match(/Duration:\s(\d+:\d+:\d+\.\d+)/);
         if (durationMatch) basicMetadata.duration = durationMatch[1];
-        if (resolutionMatch) basicMetadata.resolution = resolutionMatch[1] + 'x' + resolutionMatch[2];
-        if (fpsMatch) basicMetadata.fps = fpsMatch[1];
-        if (bitrateMatch) basicMetadata.bitrate = bitrateMatch[1];
-        if (codecMatch) basicMetadata.codec = codecMatch[1];
-        if (profileMatch) basicMetadata.profile = profileMatch[1];
-        if (levelMatch) basicMetadata.level = levelMatch[1];
 
         return basicMetadata;
 
@@ -315,6 +325,7 @@ async function extractVideoMetadata(file, ffmpeg) {
         return basicMetadata;
     }
 }
+
 
 
 
