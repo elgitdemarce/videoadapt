@@ -294,7 +294,12 @@ async function extractVideoMetadata(file, ffmpeg) {
         try {
             // Crear un archivo temporal
             const tempFileName = 'temp_input.mp4';
-            ffmpeg.FS('writeFile', tempFileName, await fetchFile(file));
+            
+            // Convertir archivo a ArrayBuffer
+            const arrayBuffer = await file.arrayBuffer();
+            
+            // Escribir archivo usando FS
+            ffmpeg.FS('writeFile', tempFileName, new Uint8Array(arrayBuffer));
 
             // Ejecutar comando de análisis
             await ffmpeg.run('-i', tempFileName);
@@ -302,18 +307,7 @@ async function extractVideoMetadata(file, ffmpeg) {
             // Restaurar logger original
             ffmpeg.setLogger = originalLogger;
 
-            // Patrones de búsqueda para metadatos
-            const patterns = {
-                duration: /Duration: (\d+:\d+:\d+\.\d+)/,
-                resolution: /(\d+)x(\d+)/,
-                fps: /(\d+) fps/,
-                bitrate: /(\d+) kb\/s/,
-                codec: /Video: (\w+)/,
-                profile: /\((\w+)\)/,
-                level: /level (\d+\.\d+)/
-            };
-
-            // Extraer metadatos usando expresiones regulares
+            // Extraer metadatos usando la línea de stream de video
             const streamInfoMatch = fullLog.match(/Stream #0:0\(eng\): Video: (\w+) \((\w+)\).*?, (\d+)x(\d+).*?, (\d+) kb\/s, (\d+) fps/);
             
             if (streamInfoMatch) {
@@ -352,7 +346,6 @@ async function extractVideoMetadata(file, ffmpeg) {
         }
     });
 }
-
 
 
 
