@@ -465,24 +465,7 @@ Configuraciones de Procesamiento:
             }
         });
 
-        // Función para extraer metadatos de video
-        async function extractVideoMetadata(file) {
-            return new Promise((resolve, reject) => {
-                const video = document.createElement('video');
-                video.preload = 'metadata';
-                video.src = URL.createObjectURL(file);
-                
-                video.onloadedmetadata = function() {
-                    resolve({
-                        size: file.size,
-                        resolution: `${this.videoWidth}x${this.videoHeight}`,
-                        duration: this.duration.toFixed(2)
-                    });
-                };
-                
-                video.onerror = reject;
-            });
-        }
+
 
         // Inicialización
         function init() {
