@@ -262,105 +262,78 @@
             // Scroll automático al final
             progressDetails.scrollTop = progressDetails.scrollHeight;
         }
-
         // Función para extraer metadatos detallados de video
+        async function extractVideoMetadata(file, ffmpeg) {
+            return new Promise(async (resolve, reject) => {
+                // Metadatos básicos del archivo
+                const basicMetadata = {
+                    size: file.size,
+                    resolution: '',
+                    duration: '',
+                    fps: '',
+                    bitrate: '',
+                    codec: '',
+                    profile: '',
+                    level: ''
+                };
 
-async function extractVideoMetadata(file, ffmpeg) {
-    return new Promise(async (resolve, reject) => {
-        // Metadatos básicos del archivo
-        const basicMetadata = {
-            size: file.size,
-            resolution: 'Desconocido',
-            duration: 'Desconocido',
-            fps: 'Desconocido',
-            bitrate: 'Desconocido',
-            codec: 'Desconocido',
-            profile: 'Desconocido',
-            level: 'Desconocido',
-            total_frames: 'Desconocido'
-        };
+                try {
+                    // Escribir archivo para análisis
+                    ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
 
-        // Variable global para capturar la línea de stream
-        window.ffmpegStreamInfo = null;
+                    // Ejecutar ffprobe para obtener metadatos detallados
+                    const ffprobeCmd = [
+                        '-v', 'quiet', 
+                        '-print_format', 'json', 
+                        '-show_format', 
+                        '-show_streams', 
+                        'input.mp4'
+                    ];
 
-        try {
-            // Crear un archivo temporal
-            const tempFileName = 'temp_input.mp4';
-            
-            // Convertir archivo a ArrayBuffer
-            const arrayBuffer = await file.arrayBuffer();
-            
-            // Escribir archivo usando FS
-            ffmpeg.FS('writeFile', tempFileName, new Uint8Array(arrayBuffer));
+                    // Ejecutar comando de análisis
+                    await ffmpeg.run('-i', 'input.mp4');
+                    
+                    // Leer resultado de ffprobe
+                    const probeOutput = ffmpeg.FS('readFile', 'input.mp4');
+                    const probeText = new TextDecoder().decode(probeOutput);
+                    const probeData = JSON.parse(probeText);
 
-            // Configurar logger personalizado
-            ffmpeg.setLogger((log) => {
-                if (log.type === 'stderr') {
-                    // Buscar línea de stream de video
-                    if (log.message.includes('Stream #0:0') && log.message.includes('Video:')) {
-                        window.ffmpegStreamInfo = log.message;
-                        console.log('Stream info capturado:', log.message);
+                    // Buscar stream de video
+                    const videoStream = probeData.streams.find(stream => stream.codec_type === 'video');
+
+                    if (videoStream) {
+                        // Extraer metadatos del video
+                        basicMetadata.resolution = `${videoStream.width}x${videoStream.height}`;
+                        
+                        // Calcular FPS
+                        if (videoStream.avg_frame_rate) {
+                            const [num, den] = videoStream.avg_frame_rate.split('/').map(Number);
+                            basicMetadata.fps = (num / den).toFixed(2);
+                        } else {
+                            basicMetadata.fps = 'N/A';
+                        }
+
+                        basicMetadata.codec = videoStream.codec_name || 'N/A';
+                        basicMetadata.profile = videoStream.profile || 'N/A';
+                        basicMetadata.level = videoStream.level ? 
+                            (videoStream.level / 10).toFixed(1) : 'N/A';
                     }
+
+                    // Metadatos de formato
+                    if (probeData.format) {
+                        basicMetadata.duration = parseFloat(probeData.format.duration).toFixed(2);
+                        basicMetadata.bitrate = probeData.format.bit_rate ? 
+                            (parseInt(probeData.format.bit_rate) / 1000).toFixed(0) + 'k' : 'N/A';
+                    }
+
+                    resolve(basicMetadata);
+
+                } catch (error) {
+                    console.error('Error extrayendo metadatos:', error);
+                    resolve(basicMetadata);
                 }
             });
-
-            try {
-                // Ejecutar comando de análisis
-                await ffmpeg.run('-i', tempFileName);
-            } catch (runError) {
-                // Ignorar errores de ejecución
-                console.log('Error de ejecución esperado:', runError);
-            }
-
-            // Usar la línea de stream capturada
-            const streamInfoLine = window.ffmpegStreamInfo;
-
-            if (streamInfoLine) {
-                // Extraer metadatos usando regex
-                const codecMatch = streamInfoLine.match(/Video: (\w+)/);
-                const profileMatch = streamInfoLine.match(/\((\w+)\)/);
-                const resolutionMatch = streamInfoLine.match(/(\d+)x(\d+)/);
-                const fpsMatch = streamInfoLine.match(/(\d+) fps/);
-                const bitrateMatch = streamInfoLine.match(/(\d+) kb\/s/);
-
-                // Asignar metadatos
-                if (codecMatch) basicMetadata.codec = codecMatch[1];
-                if (profileMatch) basicMetadata.profile = profileMatch[1];
-                if (resolutionMatch) basicMetadata.resolution = `${resolutionMatch[1]}x${resolutionMatch[2]}`;
-                if (fpsMatch) basicMetadata.fps = fpsMatch[1];
-                if (bitrateMatch) basicMetadata.bitrate = `${bitrateMatch[1]} kbps`;
-            }
-
-            // Buscar duración en logs anteriores
-            ffmpeg.setLogger((log) => {
-                if (log.type === 'stderr') {
-                    const durationMatch = log.message.match(/Duration: (\d+:\d+:\d+\.\d+)/);
-                    if (durationMatch) {
-                        const [hours, minutes, seconds] = durationMatch[1].split(':').map(parseFloat);
-                        basicMetadata.duration = (hours * 3600 + minutes * 60 + seconds).toFixed(2) + ' segundos';
-                    }
-                }
-            });
-
-            // Eliminar archivo temporal
-            ffmpeg.FS('unlink', tempFileName);
-
-            // Depuración
-            console.log('Metadatos extraídos:', basicMetadata);
-
-            resolve(basicMetadata);
-
-        } catch (error) {
-            console.error('Error extrayendo metadatos:', error);
-            resolve(basicMetadata);
         }
-    });
-}
-
-
-
-
-
 
         // Procesamiento de video
         processBtn.addEventListener('click', async () => {
@@ -487,7 +460,24 @@ Configuraciones de Procesamiento:
             }
         });
 
-
+        // Función para extraer metadatos de video
+        async function extractVideoMetadata(file) {
+            return new Promise((resolve, reject) => {
+                const video = document.createElement('video');
+                video.preload = 'metadata';
+                video.src = URL.createObjectURL(file);
+                
+                video.onloadedmetadata = function() {
+                    resolve({
+                        size: file.size,
+                        resolution: `${this.videoWidth}x${this.videoHeight}`,
+                        duration: this.duration.toFixed(2)
+                    });
+                };
+                
+                video.onerror = reject;
+            });
+        }
 
         // Inicialización
         function init() {
