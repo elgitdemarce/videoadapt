@@ -43,6 +43,26 @@
             border-radius: 5px;
             margin-top: 20px;
         }
+        .progress-container {
+            margin: 20px 0;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            width: 0;
+            height: 20px;
+            background-color: #3498db;
+            transition: width 0.5s ease;
+        }
+        .progress-details {
+            font-family: monospace;
+            text-align: left;
+            background-color: #f4f4f4;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -71,6 +91,11 @@
             </label>
         </div>
         <button id="process-btn">Procesar Videos</button>
+    </div>
+
+    <div id="progress-container" class="progress-container" style="display:none;">
+        <div class="progress-bar" id="progress-bar"></div>
+        <div class="progress-details" id="progress-details"></div>
     </div>
 
     <div id="status"></div>
@@ -127,6 +152,9 @@
         const videoConfig = document.getElementById('video-config');
         const processBtn = document.getElementById('process-btn');
         const statusDiv = document.getElementById('status');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        const progressDetails = document.getElementById('progress-details');
 
         // Estado global
         let currentFiles = [];
@@ -211,6 +239,30 @@
             dropZone.addEventListener('click', () => fileInputElement.click());
         }
 
+        // Función para parsear eventos de FFmpeg
+        function parseFFmpegLog(log) {
+            progressContainer.style.display = 'block';
+            progressDetails.innerHTML += `${log.message}<br>`;
+
+            // Extraer información de progreso
+            const frameMatch = log.message.match(/frame=\s*(\d+)/);
+            const timeMatch = log.message.match(/time=(\d+:\d+:\d+\.\d+)/);
+            const fpsMatch = log.message.match(/fps=\s*(\d+\.\d+)/);
+            const sizeMatch = log.message.match(/size=\s*(\d+)kB/);
+            const speedMatch = log.message.match(/speed=\s*(\d+\.\d+)x/);
+
+            // Actualizar barra de progreso y detalles
+            if (frameMatch && timeMatch) {
+                // Calcular progreso (simplificado)
+                const frames = parseInt(frameMatch[1]);
+                const progressPercentage = Math.min(frames / 1000 * 100, 100);
+                progressBar.style.width = `${progressPercentage}%`;
+            }
+
+            // Scroll automático al final
+            progressDetails.scrollTop = progressDetails.scrollHeight;
+        }
+
         // Procesamiento de video
         processBtn.addEventListener('click', async () => {
             if (currentFiles.length === 0) {
@@ -234,11 +286,21 @@
                     corePath: 'https://unpkg.com/@ffmpeg/core@0.10.0/dist/ffmpeg-core.js'
                 });
                 
+                // Configurar logger personalizado
+                ffmpeg.setLogger((log) => {
+                    parseFFmpegLog(log);
+                });
+
                 statusDiv.textContent = 'Cargando FFmpeg...';
                 await ffmpeg.load();
 
                 // Procesar cada archivo
                 for (let index = 0; index < currentFiles.length; index++) {
+                    // Resetear progreso
+                    progressContainer.style.display = 'block';
+                    progressBar.style.width = '0%';
+                    progressDetails.innerHTML = '';
+
                     const currentFile = currentFiles[index];
                     statusDiv.textContent = `Procesando video ${index + 1} de ${currentFiles.length}`;
 
@@ -313,6 +375,7 @@ Configuraciones de Procesamiento:
                 currentFiles = []; // Limpiar lista de archivos
                 dropZone.textContent = 'Arrastra y suelta archivos MP4 aquí';
                 videoConfig.style.display = 'none';
+                progressContainer.style.display = 'none';
 
             } catch (error) {
                 console.error('Error de procesamiento:', error);
