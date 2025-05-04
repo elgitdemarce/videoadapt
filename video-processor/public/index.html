@@ -263,6 +263,7 @@
             progressDetails.scrollTop = progressDetails.scrollHeight;
         }
         // Función para extraer metadatos detallados de video
+
 async function extractVideoMetadata(file, ffmpeg) {
     const basicMetadata = {
         size: file.size,
@@ -276,42 +277,36 @@ async function extractVideoMetadata(file, ffmpeg) {
     };
 
     try {
-        // Escribir el archivo en el sistema de archivos virtual de ffmpeg.wasm
+        // Escribir el archivo
         ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
 
-        // Ejecutar ffmpeg para obtener metadatos en formato JSON
-        await ffmpeg.run(
-            '-i', 'input.mp4',
-            '-f', 'ffmetadata',
-            'metadata.txt'
-        );
-
-        // Leer el archivo de metadatos generado
-        const metadataData = ffmpeg.FS('readFile', 'metadata.txt');
-        const metadataText = new TextDecoder().decode(metadataData);
-
-        // Analizar el texto de metadatos
-        const lines = metadataText.split('\n');
-        for (const line of lines) {
-            if (line.startsWith('duration=')) {
-                basicMetadata.duration = line.split('=')[1].trim();
-            } else if (line.startsWith('bit_rate=')) {
-                basicMetadata.bitrate = line.split('=')[1].trim();
-            } else if (line.startsWith('width=')) {
-                basicMetadata.resolution = line.split('=')[1].trim();
-            } else if (line.startsWith('height=')) {
-                basicMetadata.resolution += 'x' + line.split('=')[1].trim();
-            } else if (line.startsWith('codec_name=')) {
-                basicMetadata.codec = line.split('=')[1].trim();
-            } else if (line.startsWith('profile=')) {
-                basicMetadata.profile = line.split('=')[1].trim();
-            } else if (line.startsWith('level=')) {
-                basicMetadata.level = line.split('=')[1].trim();
-            } else if (line.startsWith('avg_frame_rate=')) {
-                const [num, den] = line.split('=')[1].trim().split('/');
-                basicMetadata.fps = (parseInt(num) / parseInt(den)).toFixed(2);
+        // Captura de salida de consola de ffmpeg (stderr)
+        let output = '';
+        ffmpeg.setLogger(({ type, message }) => {
+            if (type === 'fferr') {
+                output += message + '\n';
             }
-        }
+        });
+
+        // Ejecutar ffmpeg solo para obtener información (no genera ningún archivo)
+        await ffmpeg.run('-i', 'input.mp4');
+
+        // Parsear la salida capturada
+        const durationMatch = output.match(/Duration:\s(\d+:\d+:\d+\.\d+)/);
+        const resolutionMatch = output.match(/, (\d{2,5})x(\d{2,5})/);
+        const fpsMatch = output.match(/(\d+(?:\.\d+)?) fps/);
+        const bitrateMatch = output.match(/bitrate: (\d+ kb\/s)/);
+        const codecMatch = output.match(/Video: ([\w\d]+)/);
+        const profileMatch = output.match(/Video:.*?, (.*?)\(/);
+        const levelMatch = output.match(/Video:.*?,.*?,.*?,.*?, (\d+)/);
+
+        if (durationMatch) basicMetadata.duration = durationMatch[1];
+        if (resolutionMatch) basicMetadata.resolution = resolutionMatch[1] + 'x' + resolutionMatch[2];
+        if (fpsMatch) basicMetadata.fps = fpsMatch[1];
+        if (bitrateMatch) basicMetadata.bitrate = bitrateMatch[1];
+        if (codecMatch) basicMetadata.codec = codecMatch[1];
+        if (profileMatch) basicMetadata.profile = profileMatch[1];
+        if (levelMatch) basicMetadata.level = levelMatch[1];
 
         return basicMetadata;
 
@@ -320,6 +315,7 @@ async function extractVideoMetadata(file, ffmpeg) {
         return basicMetadata;
     }
 }
+
 
 
         // Procesamiento de video
