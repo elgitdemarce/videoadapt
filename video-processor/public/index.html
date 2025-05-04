@@ -85,6 +85,10 @@
             <input type="number" id="fps" value="30" min="1" max="60">
         </div>
         <div class="config-input">
+            <label>Buffer Size (kB):</label>
+            <input type="number" id="buffsize" value="8192" min="1024" max="8192">
+        </div>
+        <div class="config-input">
             <label>
                 <input type="checkbox" id="keep-audio" checked>
                 Mantener Audio
@@ -263,71 +267,77 @@
             progressDetails.scrollTop = progressDetails.scrollHeight;
         }
         // Función para extraer metadatos detallados de video
+        async function extractVideoMetadata(file, ffmpeg) {
+            return new Promise(async (resolve, reject) => {
+                // Metadatos básicos del archivo
+                const basicMetadata = {
+                    size: file.size,
+                    resolution: '',
+                    duration: '',
+                    fps: '',
+                    bitrate: '',
+                    codec: '',
+                    profile: '',
+                    level: ''
+                };
 
-async function extractVideoMetadata(file, ffmpeg) {
-    const basicMetadata = {
-        size: file.size,
-        resolution: '',
-        duration: '',
-        fps: '',
-        bitrate: '',
-        codec: '',
-        profile: '',
-        level: ''
-    };
+                try {
+                    // Escribir archivo para análisis
+                    ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
 
-    try {
-        // Escribir el archivo
-        ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
+                    // Ejecutar ffprobe para obtener metadatos detallados
+                    const ffprobeCmd = [
+                        '-v', 'quiet', 
+                        '-print_format', 'json', 
+                        '-show_format', 
+                        '-show_streams', 
+                        'input.mp4'
+                    ];
 
-        let ffmpegOutput = '';
+                    // Ejecutar comando de análisis
+                    await ffmpeg.run('-i', 'input.mp4');
+                    
+                    // Leer resultado de ffprobe
+                    const probeOutput = ffmpeg.FS('readFile', 'input.mp4');
+                    const probeText = new TextDecoder().decode(probeOutput);
+                    const probeData = JSON.parse(probeText);
 
-        // Capturar salida de ffmpeg desde stderr
-        ffmpeg.setLogger(({ type, message }) => {
-            if (type === 'fferr') {
-                ffmpegOutput += message + '\n';
-            }
-        });
+                    // Buscar stream de video
+                    const videoStream = probeData.streams.find(stream => stream.codec_type === 'video');
 
-        // Ejecutar solo análisis sin conversión
-        try {
-            await ffmpeg.run('-i', 'input.mp4');
-        } catch (e) {
-            // ffmpeg -i lanza error porque no se genera archivo de salida, eso es normal
+                    if (videoStream) {
+                        // Extraer metadatos del video
+                        basicMetadata.resolution = `${videoStream.width}x${videoStream.height}`;
+                        
+                        // Calcular FPS
+                        if (videoStream.avg_frame_rate) {
+                            const [num, den] = videoStream.avg_frame_rate.split('/').map(Number);
+                            basicMetadata.fps = (num / den).toFixed(2);
+                        } else {
+                            basicMetadata.fps = 'N/A';
+                        }
+
+                        basicMetadata.codec = videoStream.codec_name || 'N/A';
+                        basicMetadata.profile = videoStream.profile || 'N/A';
+                        basicMetadata.level = videoStream.level ? 
+                            (videoStream.level / 10).toFixed(1) : 'N/A';
+                    }
+
+                    // Metadatos de formato
+                    if (probeData.format) {
+                        basicMetadata.duration = parseFloat(probeData.format.duration).toFixed(2);
+                        basicMetadata.bitrate = probeData.format.bit_rate ? 
+                            (parseInt(probeData.format.bit_rate) / 1000).toFixed(0) + 'k' : 'N/A';
+                    }
+
+                    resolve(basicMetadata);
+
+                } catch (error) {
+                    console.error('Error extrayendo metadatos:', error);
+                    resolve(basicMetadata);
+                }
+            });
         }
-
-        // Analizar la línea de video
-        const videoLine = ffmpegOutput.split('\n').find(line => line.includes('Video:'));
-
-        if (videoLine) {
-            // Ejemplo: Video: h264 (Main) (avc1 / 0x31637661), yuv420p, 1920x1080, 13930 kb/s, 60 fps
-            const codecMatch = videoLine.match(/Video:\s(\w+)/);
-            const profileMatch = videoLine.match(/\((\w+)\)/);
-            const resolutionMatch = videoLine.match(/, (\d{3,5}x\d{3,5})/);
-            const bitrateMatch = videoLine.match(/, (\d+\s*kb\/s)/);
-            const fpsMatch = videoLine.match(/, (\d+(?:\.\d+)?)\s*fps/);
-
-            if (codecMatch) basicMetadata.codec = codecMatch[1];
-            if (profileMatch) basicMetadata.profile = profileMatch[1];
-            if (resolutionMatch) basicMetadata.resolution = resolutionMatch[1];
-            if (bitrateMatch) basicMetadata.bitrate = bitrateMatch[1];
-            if (fpsMatch) basicMetadata.fps = fpsMatch[1];
-        }
-
-        // Extraer duración de otra línea
-        const durationMatch = ffmpegOutput.match(/Duration:\s(\d+:\d+:\d+\.\d+)/);
-        if (durationMatch) basicMetadata.duration = durationMatch[1];
-
-        return basicMetadata;
-
-    } catch (error) {
-        console.error('Error extrayendo metadatos:', error);
-        return basicMetadata;
-    }
-}
-
-
-
 
         // Procesamiento de video
         processBtn.addEventListener('click', async () => {
@@ -340,6 +350,7 @@ async function extractVideoMetadata(file, ffmpeg) {
             const bitrate = document.getElementById('bitrate').value;
             const fps = document.getElementById('fps').value;
             const keepAudio = document.getElementById('keep-audio').checked;
+            const buffsize = document.getElementById('buffsize').value;
 
             // Informe consolidado de metadatos
             const metadataReports = [];
