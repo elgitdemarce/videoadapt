@@ -7,7 +7,62 @@
     <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
     
     <style>
-        /* [Estilos anteriores sin cambios] */
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        #drop-zone {
+            border: 3px dashed #3498db;
+            border-radius: 20px;
+            padding: 50px;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+        }
+        #drop-zone.drag-over {
+            background-color: rgba(52, 152, 219, 0.1);
+            border-color: #2980b9;
+        }
+        #video-config {
+            display: none;
+            margin-top: 20px;
+        }
+        .config-input {
+            margin: 10px 0;
+        }
+        #status {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+        .error-message {
+            color: red;
+            background-color: #ffeeee;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .progress-container {
+            margin: 20px 0;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            width: 0;
+            height: 20px;
+            background-color: #3498db;
+            transition: width 0.5s ease;
+        }
+        .progress-details {
+            font-family: monospace;
+            text-align: left;
+            background-color: #f4f4f4;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -247,7 +302,33 @@ Configuraciones de Procesamiento:
             }
         });
 
-        // [Resto del código anterior sin cambios]
+        // Función para extraer metadatos de video
+        async function extractVideoMetadata(file) {
+            return new Promise((resolve, reject) => {
+                const video = document.createElement('video');
+                video.preload = 'metadata';
+                video.src = URL.createObjectURL(file);
+                
+                video.onloadedmetadata = function() {
+                    resolve({
+                        size: file.size,
+                        resolution: `${this.videoWidth}x${this.videoHeight}`,
+                        duration: this.duration.toFixed(2)
+                    });
+                };
+                
+                video.onerror = reject;
+            });
+        }
+
+        // Inicialización
+        function init() {
+            checkCompatibility();
+            setupDragDropEvents();
+        }
+
+        // Ejecutar inicialización
+        init();
     </script>
 </body>
 </html>
