@@ -302,10 +302,10 @@ async function extractVideoMetadata(file, ffmpeg) {
             // Restaurar logger original
             ffmpeg.setLogger = originalLogger;
 
-            // Patrones de búsqueda para diferentes metadatos
+            // Patrones de búsqueda para metadatos
             const patterns = {
                 duration: /Duration: (\d+:\d+:\d+\.\d+)/,
-                resolution: /Video: \w+ .*, (\d+)x(\d+)/,
+                resolution: /(\d+)x(\d+)/,
                 fps: /(\d+) fps/,
                 bitrate: /(\d+) kb\/s/,
                 codec: /Video: (\w+)/,
@@ -314,26 +314,28 @@ async function extractVideoMetadata(file, ffmpeg) {
             };
 
             // Extraer metadatos usando expresiones regulares
-            Object.keys(patterns).forEach(key => {
-                const match = fullLog.match(patterns[key]);
-                if (match) {
-                    switch(key) {
-                        case 'duration':
-                            // Convertir formato HH:MM:SS.ms a segundos
-                            const [hours, minutes, seconds] = match[1].split(':').map(parseFloat);
-                            basicMetadata[key] = (hours * 3600 + minutes * 60 + seconds).toFixed(2) + ' segundos';
-                            break;
-                        case 'resolution':
-                            basicMetadata[key] = `${match[1]}x${match[2]}`;
-                            break;
-                        case 'bitrate':
-                            basicMetadata[key] = `${match[1]} kbps`;
-                            break;
-                        default:
-                            basicMetadata[key] = match[1];
-                    }
-                }
-            });
+            const streamInfoMatch = fullLog.match(/Stream #0:0\(eng\): Video: (\w+) \((\w+)\).*?, (\d+)x(\d+).*?, (\d+) kb\/s, (\d+) fps/);
+            
+            if (streamInfoMatch) {
+                basicMetadata.codec = streamInfoMatch[1];
+                basicMetadata.profile = streamInfoMatch[2];
+                basicMetadata.resolution = `${streamInfoMatch[3]}x${streamInfoMatch[4]}`;
+                basicMetadata.bitrate = `${streamInfoMatch[5]} kbps`;
+                basicMetadata.fps = streamInfoMatch[6];
+            }
+
+            // Extraer duración
+            const durationMatch = fullLog.match(/Duration: (\d+:\d+:\d+\.\d+)/);
+            if (durationMatch) {
+                const [hours, minutes, seconds] = durationMatch[1].split(':').map(parseFloat);
+                basicMetadata.duration = (hours * 3600 + minutes * 60 + seconds).toFixed(2) + ' segundos';
+            }
+
+            // Extraer level
+            const levelMatch = fullLog.match(/level (\d+\.\d+)/);
+            if (levelMatch) {
+                basicMetadata.level = levelMatch[1];
+            }
 
             // Eliminar archivo temporal
             ffmpeg.FS('unlink', tempFileName);
@@ -350,6 +352,7 @@ async function extractVideoMetadata(file, ffmpeg) {
         }
     });
 }
+
 
 
 
