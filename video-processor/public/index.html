@@ -262,82 +262,107 @@
             // Scroll automático al final
             progressDetails.scrollTop = progressDetails.scrollHeight;
         }
+
         // Función para extraer metadatos detallados de video
 async function extractVideoMetadata(file, ffmpeg) {
     return new Promise(async (resolve, reject) => {
         // Metadatos básicos del archivo
         const basicMetadata = {
             size: file.size,
-            resolution: '',
-            duration: '',
-            fps: 'N/A',
-            bitrate: 'N/A',
-            codec: 'N/A',
-            profile: 'N/A',
-            level: 'N/A'
+            resolution: 'Desconocido',
+            duration: 'Desconocido',
+            fps: 'Desconocido',
+            bitrate: 'Desconocido',
+            codec: 'Desconocido',
+            profile: 'Desconocido',
+            level: 'Desconocido',
+            total_frames: 'Desconocido'
         };
 
         try {
             // Escribir archivo para análisis
             ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
 
-            // Ejecutar ffprobe para obtener metadatos detallados
+            // Comando de ffprobe similar al ejemplo de Python
             const ffprobeCmd = [
-                '-v', 'quiet', 
-                '-print_format', 'json', 
-                '-show_format', 
-                '-show_streams', 
+                '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'format=duration:stream=codec_name,bit_rate,level,r_frame_rate,profile,nb_frames',
+                '-print_format', 'json',
                 'input.mp4'
             ];
 
             // Ejecutar comando de análisis
-            await ffmpeg.run('-i', 'input.mp4');
+            await ffmpeg.run(...ffprobeCmd);
             
             // Leer resultado de ffprobe
             const probeOutput = ffmpeg.FS('readFile', 'input.mp4');
             const probeText = new TextDecoder().decode(probeOutput);
             
             try {
-                const probeData = JSON.parse(probeText);
+                const videoInfo = JSON.parse(probeText);
 
-                // Buscar stream de video
-                const videoStream = probeData.streams.find(stream => stream.codec_type === 'video');
-
-                if (videoStream) {
-                    // Resolución
-                    if (videoStream.width && videoStream.height) {
-                        basicMetadata.resolution = `${videoStream.width}x${videoStream.height}`;
-                    }
-
-                    // FPS
-                    if (videoStream.avg_frame_rate) {
-                        const [num, den] = videoStream.avg_frame_rate.split('/').map(Number);
-                        basicMetadata.fps = num && den ? (num / den).toFixed(2) : 'N/A';
-                    }
+                // Verificar si hay streams de video
+                if (videoInfo.streams && videoInfo.streams.length > 0) {
+                    const videoStream = videoInfo.streams[0];
 
                     // Codec
-                    basicMetadata.codec = videoStream.codec_name || 'N/A';
+                    basicMetadata.codec = videoStream.codec_name || 'Desconocido';
 
-                    // Profile
-                    basicMetadata.profile = videoStream.profile || 'N/A';
+                    // Bitrate
+                    if (videoStream.bit_rate) {
+                        const bitrate = parseInt(videoStream.bit_rate);
+                        basicMetadata.bitrate = (bitrate / 1000).toFixed(2) + ' kbps';
+                    }
 
                     // Level
                     basicMetadata.level = videoStream.level ? 
-                        (videoStream.level / 10).toFixed(1) : 'N/A';
+                        (videoStream.level / 10).toFixed(1) : 'Desconocido';
+
+                    // Profile
+                    basicMetadata.profile = videoStream.profile || 'Desconocido';
+
+                    // FPS
+                    if (videoStream.r_frame_rate) {
+                        try {
+                            const fps = eval(videoStream.r_frame_rate);
+                            basicMetadata.fps = fps.toFixed(2);
+                        } catch {
+                            basicMetadata.fps = 'Desconocido';
+                        }
+
+                    // Total de frames
+                    basicMetadata.total_frames = videoStream.nb_frames || 'Desconocido';
                 }
 
                 // Metadatos de formato
-                if (probeData.format) {
+                if (videoInfo.format) {
                     // Duración
-                    if (probeData.format.duration) {
-                        basicMetadata.duration = parseFloat(probeData.format.duration).toFixed(2);
-                    }
-
-                    // Bitrate
-                    if (probeData.format.bit_rate) {
-                        basicMetadata.bitrate = (parseInt(probeData.format.bit_rate) / 1000).toFixed(0) + 'k';
+                    if (videoInfo.format.duration) {
+                        basicMetadata.duration = parseFloat(videoInfo.format.duration).toFixed(2) + ' segundos';
                     }
                 }
+
+                // Resolución (requiere otro comando)
+                const resolutionCmd = [
+                    '-v', 'error',
+                    '-select_streams', 'v:0',
+                    '-show_entries', 'stream=width,height',
+                    '-print_format', 'json',
+                    'input.mp4'
+                ];
+                await ffmpeg.run(...resolutionCmd);
+                const resolutionOutput = ffmpeg.FS('readFile', 'input.mp4');
+                const resolutionText = new TextDecoder().decode(resolutionOutput);
+                const resolutionInfo = JSON.parse(resolutionText);
+
+                if (resolutionInfo.streams && resolutionInfo.streams.length > 0) {
+                    const stream = resolutionInfo.streams[0];
+                    if (stream.width && stream.height) {
+                        basicMetadata.resolution = `${stream.width}x${stream.height}`;
+                    }
+                }
+
             } catch (parseError) {
                 console.error('Error parsing probe data:', parseError);
             }
@@ -350,6 +375,7 @@ async function extractVideoMetadata(file, ffmpeg) {
         }
     });
 }
+
 
 
         // Procesamiento de video
