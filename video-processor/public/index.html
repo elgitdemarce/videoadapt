@@ -36,17 +36,12 @@
             margin-top: 20px;
             font-weight: bold;
         }
-        #file-list {
-            margin: 10px 0;
-            text-align: left;
-        }
-        #processing-details {
-            background-color: #f4f4f4;
-            text-align: left;
-            max-height: 200px;
-            overflow-y: auto;
+        .error-message {
+            color: red;
+            background-color: #ffeeee;
             padding: 10px;
-            font-family: monospace;
+            border-radius: 5px;
+            margin-top: 20px;
         }
     </style>
 </head>
@@ -59,8 +54,6 @@
         Arrastra y suelta archivos MP4 aquí
         <input type="file" id="file-input" accept="video/mp4" multiple style="display:none;">
     </div>
-
-    <div id="file-list"></div>
 
     <div id="video-config">
         <div class="config-input">
@@ -80,20 +73,60 @@
         <button id="process-btn">Procesar Videos</button>
     </div>
 
-    <div id="processing-details"></div>
     <div id="status"></div>
 
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
     <script>
-        // [Mantener funciones de compatibilidad anteriores]
+        // Función de verificación de compatibilidad
+        function checkCompatibility() {
+            const compatibilityCheck = document.getElementById('compatibility-check');
+            const checks = [
+                {
+                    name: 'SharedArrayBuffer',
+                    check: () => typeof SharedArrayBuffer !== 'undefined',
+                    message: 'Su navegador no soporta SharedArrayBuffer. Actualice o use un navegador compatible.'
+                },
+                {
+                    name: 'Cross-Origin Isolation',
+                    check: () => window.crossOriginIsolated,
+                    message: 'La página no está cross-origin isolated. Verifique los encabezados de seguridad.'
+                },
+                {
+                    name: 'WebAssembly',
+                    check: () => !!window.WebAssembly,
+                    message: 'Su navegador no soporta WebAssembly.'
+                }
+            ];
+
+            const failedChecks = checks.filter(check => !check.check());
+
+            if (failedChecks.length > 0) {
+                compatibilityCheck.style.display = 'block';
+                compatibilityCheck.innerHTML = `
+                    <strong>Problemas de Compatibilidad:</strong>
+                    <ul>
+                        ${failedChecks.map(check => `<li>${check.message}</li>`).join('')}
+                    </ul>
+                    <p>Soluciones posibles:</p>
+                    <ul>
+                        <li>Actualice su navegador a la última versión</li>
+                        <li>Asegúrese de estar en un sitio HTTPS</li>
+                        <li>Verifique la configuración de seguridad de su navegador</li>
+                    </ul>
+                `;
+                return false;
+            }
+
+            compatibilityCheck.style.display = 'none';
+            return true;
+        }
 
         // Elementos del DOM
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
-        const fileList = document.getElementById('file-list');
         const videoConfig = document.getElementById('video-config');
         const processBtn = document.getElementById('process-btn');
         const statusDiv = document.getElementById('status');
-        const processingDetailsDiv = document.getElementById('processing-details');
 
         // Estado global
         let currentFiles = [];
@@ -143,18 +176,39 @@
             
             if (mp4Files.length > 0) {
                 currentFiles = [...currentFiles, ...mp4Files];
-                updateFileList();
+                updateDropZone();
                 videoConfig.style.display = 'block';
                 statusDiv.textContent = `${currentFiles.length} archivo(s) MP4 listo(s) para procesar`;
             } else {
                 statusDiv.textContent = 'Por favor, seleccione archivos MP4';
+                dropZone.textContent = 'Arrastra y suelta archivos MP4 aquí';
             }
         }
 
-        function updateFileList() {
-            fileList.innerHTML = currentFiles.map((file, index) => 
+        function updateDropZone() {
+            dropZone.innerHTML = currentFiles.map((file, index) => 
                 `<div>Archivo ${index + 1}: ${file.name}</div>`
             ).join('');
+            
+            // Añadir input de archivos de nuevo
+            const fileInputElement = document.createElement('input');
+            fileInputElement.type = 'file';
+            fileInputElement.id = 'file-input';
+            fileInputElement.accept = 'video/mp4';
+            fileInputElement.multiple = true;
+            fileInputElement.style.display = 'none';
+            fileInputElement.addEventListener('change', handleFileSelect);
+            dropZone.appendChild(fileInputElement);
+
+            // Añadir texto de instrucción
+            const instructionText = document.createElement('div');
+            instructionText.textContent = 'Clic para añadir más archivos';
+            instructionText.style.marginTop = '10px';
+            instructionText.style.color = '#3498db';
+            dropZone.appendChild(instructionText);
+
+            // Añadir evento de clic
+            dropZone.addEventListener('click', () => fileInputElement.click());
         }
 
         // Procesamiento de video
@@ -174,7 +228,7 @@
 
             try {
                 // Cargar FFmpeg
-                const { createFFmpeg, fetchFile } = await loadFFmpeg();
+                const { createFFmpeg, fetchFile } = FFmpeg;
                 const ffmpeg = createFFmpeg({ 
                     log: true,
                     corePath: 'https://unpkg.com/@ffmpeg/core@0.10.0/dist/ffmpeg-core.js'
@@ -187,12 +241,6 @@
                 for (let index = 0; index < currentFiles.length; index++) {
                     const currentFile = currentFiles[index];
                     statusDiv.textContent = `Procesando video ${index + 1} de ${currentFiles.length}`;
-                    processingDetailsDiv.innerHTML = ''; // Limpiar detalles anteriores
-
-                    // Capturar logs de FFmpeg
-                    ffmpeg.setLogger((log) => {
-                        processingDetailsDiv.innerHTML += `${log.message}<br>`;
-                    });
 
                     // Escribir archivo de entrada
                     ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(currentFile));
@@ -263,7 +311,8 @@ Configuraciones de Procesamiento:
 
                 statusDiv.textContent = 'Procesamiento completado';
                 currentFiles = []; // Limpiar lista de archivos
-                updateFileList();
+                dropZone.textContent = 'Arrastra y suelta archivos MP4 aquí';
+                videoConfig.style.display = 'none';
 
             } catch (error) {
                 console.error('Error de procesamiento:', error);
