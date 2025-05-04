@@ -280,6 +280,9 @@ async function extractVideoMetadata(file, ffmpeg) {
             total_frames: 'Desconocido'
         };
 
+        // Variable global para capturar la línea de stream
+        window.ffmpegStreamInfo = null;
+
         try {
             // Crear un archivo temporal
             const tempFileName = 'temp_input.mp4';
@@ -290,14 +293,16 @@ async function extractVideoMetadata(file, ffmpeg) {
             // Escribir archivo usando FS
             ffmpeg.FS('writeFile', tempFileName, new Uint8Array(arrayBuffer));
 
-            // Configurar captura de logs
-            const logCapture = [];
-            const originalLogger = ffmpeg.setLogger;
-            ffmpeg.setLogger = (log) => {
+            // Configurar logger personalizado
+            ffmpeg.setLogger((log) => {
                 if (log.type === 'stderr') {
-                    logCapture.push(log.message);
+                    // Buscar línea de stream de video
+                    if (log.message.includes('Stream #0:0') && log.message.includes('Video:')) {
+                        window.ffmpegStreamInfo = log.message;
+                        console.log('Stream info capturado:', log.message);
+                    }
                 }
-            };
+            });
 
             try {
                 // Ejecutar comando de análisis
@@ -307,13 +312,8 @@ async function extractVideoMetadata(file, ffmpeg) {
                 console.log('Error de ejecución esperado:', runError);
             }
 
-            // Restaurar logger original
-            ffmpeg.setLogger = originalLogger;
-
-            // Buscar la línea específica de stream de video
-            const streamInfoLine = logCapture.find(line => 
-                line.includes('Stream #0:0') && line.includes('Video:')
-            );
+            // Usar la línea de stream capturada
+            const streamInfoLine = window.ffmpegStreamInfo;
 
             if (streamInfoLine) {
                 // Extraer metadatos usando regex
@@ -331,21 +331,21 @@ async function extractVideoMetadata(file, ffmpeg) {
                 if (bitrateMatch) basicMetadata.bitrate = `${bitrateMatch[1]} kbps`;
             }
 
-            // Buscar línea de duración
-            const durationLine = logCapture.find(line => line.includes('Duration:'));
-            if (durationLine) {
-                const durationMatch = durationLine.match(/Duration: (\d+:\d+:\d+\.\d+)/);
-                if (durationMatch) {
-                    const [hours, minutes, seconds] = durationMatch[1].split(':').map(parseFloat);
-                    basicMetadata.duration = (hours * 3600 + minutes * 60 + seconds).toFixed(2) + ' segundos';
+            // Buscar duración en logs anteriores
+            ffmpeg.setLogger((log) => {
+                if (log.type === 'stderr') {
+                    const durationMatch = log.message.match(/Duration: (\d+:\d+:\d+\.\d+)/);
+                    if (durationMatch) {
+                        const [hours, minutes, seconds] = durationMatch[1].split(':').map(parseFloat);
+                        basicMetadata.duration = (hours * 3600 + minutes * 60 + seconds).toFixed(2) + ' segundos';
+                    }
                 }
-            }
+            });
 
             // Eliminar archivo temporal
             ffmpeg.FS('unlink', tempFileName);
 
             // Depuración
-            console.log('Logs capturados:', logCapture);
             console.log('Metadatos extraídos:', basicMetadata);
 
             resolve(basicMetadata);
@@ -356,6 +356,7 @@ async function extractVideoMetadata(file, ffmpeg) {
         }
     });
 }
+
 
 
 
