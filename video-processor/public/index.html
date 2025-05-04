@@ -175,6 +175,7 @@
             fileInput.addEventListener('change', handleFileSelect);
         }
 
+        
         function preventDefaults(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -238,7 +239,29 @@
             // Añadir evento de clic
             dropZone.addEventListener('click', () => fileInputElement.click());
         }
+        // Función para parsear eventos de FFmpeg
+        function parseFFmpegLog(log) {
+            progressContainer.style.display = 'block';
+            progressDetails.innerHTML += `${log.message}<br>`;
 
+            // Extraer información de progreso
+            const frameMatch = log.message.match(/frame=\s*(\d+)/);
+            const timeMatch = log.message.match(/time=(\d+:\d+:\d+\.\d+)/);
+            const fpsMatch = log.message.match(/fps=\s*(\d+\.\d+)/);
+            const sizeMatch = log.message.match(/size=\s*(\d+)kB/);
+            const speedMatch = log.message.match(/speed=\s*(\d+\.\d+)x/);
+
+            // Actualizar barra de progreso y detalles
+            if (frameMatch && timeMatch) {
+                // Calcular progreso (simplificado)
+                const frames = parseInt(frameMatch[1]);
+                const progressPercentage = Math.min(frames / 1000 * 100, 100);
+                progressBar.style.width = `${progressPercentage}%`;
+            }
+
+            // Scroll automático al final
+            progressDetails.scrollTop = progressDetails.scrollHeight;
+        }
         // Función para extraer metadatos detallados de video
         async function extractVideoMetadata(file, ffmpeg) {
             return new Promise(async (resolve, reject) => {
